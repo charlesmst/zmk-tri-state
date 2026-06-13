@@ -25,3 +25,11 @@ properties:
   tap-ms:
     type: int
     default: 5
+  hold-start:
+    type: boolean
+    description: |
+      Hold the start behavior down for the lifetime of the tri-state instead of
+      tapping it once. Use a held modifier (e.g. &kp LALT) as both the start and
+      end binding; the modifier is pressed on activation and released on
+      deactivation. Because ZMK ref-counts explicit modifiers, this lets several
+      tri-states (e.g. forward/reverse alt-tab on separate keys) share one hold.

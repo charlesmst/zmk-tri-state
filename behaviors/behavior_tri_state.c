@@ -31,6 +31,7 @@ struct behavior_tri_state_config {
     int32_t ignored_layers;
     int32_t timeout_ms;
     int tap_ms;
+    bool hold_start;
     uint8_t ignored_key_positions[];
 };
 
@@ -75,8 +76,13 @@ void trigger_end_behavior(struct active_tri_state *si) {
 #endif
     };
 
-    zmk_behavior_queue_add(&event, si->config->end_behavior, true, si->config->tap_ms);
-    zmk_behavior_queue_add(&event, si->config->end_behavior, false, 0);
+    if (si->config->hold_start) {
+        // Release the start behavior that was held since activation.
+        zmk_behavior_queue_add(&event, si->config->start_behavior, false, si->config->tap_ms);
+    } else {
+        zmk_behavior_queue_add(&event, si->config->end_behavior, true, si->config->tap_ms);
+        zmk_behavior_queue_add(&event, si->config->end_behavior, false, 0);
+    }
 }
 
 void behavior_tri_state_timer_handler(struct k_work *item) {
@@ -157,8 +163,12 @@ static int on_tri_state_binding_pressed(struct zmk_behavior_binding *binding,
     tri_state->is_pressed = true;
     if (tri_state->first_press) {
         zmk_behavior_invoke_binding((struct zmk_behavior_binding *)&cfg->start_behavior, event, true);
-        zmk_behavior_invoke_binding((struct zmk_behavior_binding *)&cfg->start_behavior,
-                                         event, false);
+        // With hold-start the start behavior (e.g. &kp LALT) stays pressed for the
+        // lifetime of the tri-state and is released in the end handler instead.
+        if (!cfg->hold_start) {
+            zmk_behavior_invoke_binding((struct zmk_behavior_binding *)&cfg->start_behavior,
+                                        event, false);
+        }
         tri_state->first_press = false;
     }
     zmk_behavior_invoke_binding((struct zmk_behavior_binding *)&cfg->continue_behavior, event, true);
@@ -276,10 +286,15 @@ static int tri_state_layer_state_changed_listener(const zmk_event_t *eh) {
                 zmk_behavior_invoke_binding(
                     (struct zmk_behavior_binding *)&tri_state->config->continue_behavior, event, false);
             }
-            zmk_behavior_invoke_binding(
-                (struct zmk_behavior_binding *)&tri_state->config->end_behavior, event, true);
-            zmk_behavior_invoke_binding(
-                (struct zmk_behavior_binding *)&tri_state->config->end_behavior, event, false);
+            if (tri_state->config->hold_start) {
+                zmk_behavior_invoke_binding(
+                    (struct zmk_behavior_binding *)&tri_state->config->start_behavior, event, false);
+            } else {
+                zmk_behavior_invoke_binding(
+                    (struct zmk_behavior_binding *)&tri_state->config->end_behavior, event, true);
+                zmk_behavior_invoke_binding(
+                    (struct zmk_behavior_binding *)&tri_state->config->end_behavior, event, false);
+            }
             return ZMK_EV_EVENT_BUBBLE;
         }
     }
@@ -305,6 +320,7 @@ static int tri_state_layer_state_changed_listener(const zmk_event_t *eh) {
         .ignored_layers_len = DT_INST_PROP_LEN(n, ignored_layers),                                 \
         .timeout_ms = DT_INST_PROP(n, timeout_ms),                                                 \
         .tap_ms = DT_INST_PROP(n, tap_ms),                                                         \
+        .hold_start = DT_INST_PROP(n, hold_start),                                                 \
         .start_behavior = _TRANSFORM_ENTRY(0, n),                                                  \
         .continue_behavior = _TRANSFORM_ENTRY(1, n),                                               \
         .end_behavior = _TRANSFORM_ENTRY(2, n)};                                                   \
